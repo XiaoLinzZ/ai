@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 梦幻伴侣 - 虚拟角色聊天 system</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-pink: #ff85a2;
+            --secondary-pink: #fbb6ce;
+            --accent-purple: #b794f4;
+            --bg-gradient: linear-gradient(135deg, #fff5f7 0%, #f0f4ff 100%);
+        }
+
+        body {
+            font-family: 'Noto Sans SC', sans-serif;
+            background: var(--bg-gradient);
+            min-height: 100vh;
+            margin: 0;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+        }
+
+        #custom-bg-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 5; /* 确保在 body 之上，但被 main/full-panel 覆盖 */
+            background-size: cover;
+            background-position: center;
+            transition: opacity 0.5s ease, filter 0.5s ease;
+            pointer-events: none;
+            display: none;
+        }
+
+        /* 统一处理有自定义背景时的透明度 */
+        .has-custom-bg main,
+        .has-custom-bg .full-panel {
+            background-color: transparent !important;
+            z-index: 10;
+        }
+
+        .has-custom-bg #tab-home,
+        .has-custom-bg #tab-contacts,
+        .has-custom-bg #tab-moments,
+        .has-custom-bg #tab-settings,
+        .has-custom-bg #panel-chat {
+            background-color: rgba(255, 255, 255, 0.3) !important;
+            backdrop-filter: blur(20px) saturate(160%);
+            -webkit-backdrop-filter: blur(20px) saturate(160%);
+        }
+
+        .has-custom-bg #chat-messages {
+            background-color: transparent !important;
+        }
+
+        /* 顶部和底部栏在背景模式下的透明处理 */
+        .has-custom-bg header,
+        .has-custom-bg .border-b,
+        .has-custom-bg .bg-white {
+            background-color: rgba(255, 255, 255, 0.2) !important;
+            backdrop-filter: blur(10px);
+        }
+
+        .has-custom-bg .bottom-nav {
+            background: rgba(255, 255, 255, 0.5) !important;
+            z-index: 100;
+        }
+
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .animate-fade-in {
+            animation: fadeIn 0.4s ease-out forwards;
+        }
+
+        .character-list-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 16px;
+            background: white;
+            border-bottom: 1px solid #f3f4f6;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .character-list-item:active {
+            background: #f3f4f6;
+        }
+        .add-char-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 12px;
+            background: #fff;
+            color: var(--primary-pink);
+            font-weight: 500;
+            border-top: 1px solid #f3f4f6;
+        }
+        
+        /* 聊天气泡 */
+        .chat-bubble-user {
+            background: var(--primary-pink);
+            color: white;
+            border-radius: 1.2rem 1.2rem 0 1.2rem;
+        }
+        .chat-bubble-ai {
+            background: white;
+            color: #374151;
+            border-radius: 0 1.2rem 1.2rem 1.2rem;
+        }
+        
+        .bottom-nav {
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            height: 60px;
+            background: white;
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            border-top: 1px solid #f3f4f6;
+            padding-bottom: env(safe-area-inset-bottom);
+        }
+        
+        .bottom-nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            color: #9ca3af;
+            font-size: 10px;
+            transition: all 0.3s;
+            background: transparent;
+            border: none;
+            cursor: pointer;
+        }
+
+        .bottom-nav-item.active {
+            color: var(--primary-pink);
+        }
+        
+        /* 朋友圈样式 */
+        .moments-header {
+            position: relative;
+            height: 240px;
+            background: #eee;
+            margin-bottom: 20px;
+            cursor: pointer;
+        }
+        .moments-header img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        .moments-user-info {
+            position: absolute;
+            right: 20px;
+            bottom: -20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .moments-user-info span {
+            color: white;
+            font-weight: bold;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+            font-size: 16px;
+        }
+        .moments-user-info img {
+            width: 64px;
+            height: 64px;
+            border-radius: 12px;
+            border: 2px solid white;
+            background: white;
+        }
+
+        .moment-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.2rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+
+        /* 统一侧滑面板 */
+        .full-panel {
+            position: fixed;
+            inset: 0;
+            background: white;
+            z-index: 50;
+            display: none;
+            flex-direction: column;
+        }
+    </style>
+</head>
+<body>
+    <div id="custom-bg-layer"></div>
+
+    <!-- 主页面容器 -->
+    <main class="flex-1 overflow-y-auto pb-20 no-scrollbar">
+        <!-- 首页 - 大厅 -->
+        <div id="tab-home" class="p-4 space-y-6">
+            <header class="flex justify-between items-center py-4">
+                <h1 class="text-2xl font-bold text-gray-800">梦幻大厅</h1>
+                <div class="w-10 h-10 bg-pink-100 rounded-full flex items-center justify-center">
+                    <i data-lucide="sparkles" class="text-pink-500"></i>
+                </div>
+            </header>
+            
+            <div id="home-hall" class="grid grid-cols-2 gap-4">
+                <!-- 角色卡片动态生成 -->
+            </div>
+        </div>
+
+        <!-- 通讯录 -->
+        <div id="tab-contacts" class="hidden h-full flex flex-col">
+            <header class="p-4 border-b bg-white flex justify-between items-center">
+                <h1 class="text-lg font-bold">通讯录</h1>
+                <button onclick="document.getElementById('panel-add-friend').style.display='flex'">
+                    <i data-lucide="user-plus" class="text-pink-500"></i>
+                </button>
+            </header>
+            <div id="contact-list" class="flex-1 overflow-y-auto">
+                <!-- 列表项 -->
+            </div>
+        </div>
+
+        <!-- 朋友圈 -->
+        <div id="tab-moments" class="hidden">
+            <div class="moments-header" onclick="document.getElementById('moments-bg-upload').click()">
+                <img id="moments-bg-img" src="https://images.unsplash.com/photo-1518531933037-91b2f5f229cc?w=800" alt="bg">
+                <input type="file" id="moments-bg-upload" class="hidden" accept="image/*" onchange="uploadMomentsBg(event)">
+                <div class="moments-user-info">
+                    <span id="moments-user-name">我</span>
+                    <img id="moments-user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=User" alt="avatar">
+                </div>
+            </div>
+            
+            <div class="px-4 pb-4">
+                <button onclick="document.getElementById('panel-post-moment').style.display='flex'" 
+                        class="w-full py-3 bg-white rounded-xl shadow-sm border border-gray-100 flex items-center justify-center gap-2 text-gray-500 mb-6">
+                    <i data-lucide="camera" size="20"></i>
+                    <span>记录这一刻...</span>
+                </button>
+                
+                <div id="moments-list" class="space-y-6">
+                    <!-- 动态生成朋友圈 -->
+                </div>
+            </div>
+        </div>
+
+        <!-- 设置 -->
+        <div id="tab-settings" class="hidden p-4 space-y-6">
+            <header class="py-4">
+                <h1 class="text-xl font-bold">个人设置</h1>
+            </header>
+            
+            <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-50 flex flex-col items-center gap-4">
+                <div class="relative">
+                    <img id="settings-user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=User" class="w-16 h-16 rounded-2xl object-cover">
+                    <button class="absolute -bottom-2 -right-2 bg-pink-500 text-white p-1.5 rounded-full shadow-lg" onclick="document.getElementById('user-avatar-upload').click()">
+                        <i data-lucide="camera" size="14"></i>
+                    </button>
+                </div>
+                <h2 id="settings-user-name" class="font-bold text-lg">我</h2>
+            </div>
+
+            <div class="space-y-2">
+                <button onclick="document.getElementById('panel-user-profile').style.display='flex'" class="w-full p-4 bg-white rounded-xl flex justify-between items-center">
+                    <div class="flex items-center gap-3 text-gray-700">
+                        <i data-lucide="user-circle"></i>
+                        <span>个人资料</span>
+                    </div>
+                    <i data-lucide="chevron-right" size="18" class="text-gray-400"></i>
+                </button>
+                <button onclick="alert('开发者：梦幻工作室\n版本：v1.0.0')" class="w-full p-4 bg-white rounded-xl flex justify-between items-center">
+                    <div class="flex items-center gap-3 text-gray-700">
+                        <i data-lucide="info"></i>
+                        <span>关于系统</span>
+                    </div>
+                    <i data-lucide="chevron-right" size="18" class="text-gray-400"></i>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- 朋友圈发布面板 -->
+    <div id="panel-post-moment" class="full-panel">
+        <header class="p-4 border-b flex justify-between items-center">
+            <button onclick="document.getElementById('panel-post-moment').style.display='none'">取消</button>
+            <h1 class="font-bold">发表朋友圈</h1>
+            <button onclick="submitMoment()" class="text-pink-500 font-bold">发表</button>
+        </header>
+        <div class="p-4 flex-1">
+            <textarea id="post-moment-text" rows="4" placeholder="这一刻的想法..." class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm resize-none"></textarea>
+            <div class="mt-4 grid grid-cols-3 gap-2">
+                <div id="post-moment-img-btn" onclick="document.getElementById('post-moment-upload').click()" 
+                     class="aspect-square bg-gray-100 rounded-xl flex items-center justify-center border-2 border-dashed border-gray-200 relative overflow-hidden">
+                    <i data-lucide="plus" class="text-gray-400"></i>
+                    <img id="post-moment-img-preview" src="" class="absolute inset-0 w-full h-full object-cover hidden">
+                </div>
+                <input type="file" id="post-moment-upload" class="hidden" accept="image/*" onchange="previewMomentImg(event)">
+            </div>
+        </div>
+    </div>
+
+    <!-- 个人资料编辑面板 -->
+    <div id="panel-user-profile" class="full-panel">
+        <header class="p-4 border-b flex justify-between items-center">
+            <button onclick="document.getElementById('panel-user-profile').style.display='none'">返回</button>
+            <h1 class="font-bold">个人资料</h1>
+            <button onclick="saveUserProfile()" class="text-pink-500 font-bold">保存</button>
+        </header>
+        <div class="p-6 space-y-6">
+            <div class="flex flex-col items-center gap-4">
+                <div class="relative">
+                    <img id="user-avatar-preview" src="https://api.dicebear.com/7.x/avataaars/svg?seed=User" class="w-20 h-20 rounded-2xl object-cover border-2 border-pink-100">
+                    <button class="absolute -bottom-2 -right-2 bg-pink-500 text-white p-2 rounded-full shadow-lg" onclick="document.getElementById('user-avatar-upload').click()">
+                        <i data-lucide="camera" size="16"></i>
+                    </button>
+                </div>
+                <input type="file" id="user-avatar-upload" class="hidden" accept="image/*" onchange="previewUserAvatar(event)">
+                <p class="text-xs text-gray-400">点击头像更换</p>
+            </div>
+            <div class="space-y-4">
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-gray-500 ml-1">我的昵称</label>
+                    <input type="text" id="user-nickname-input" placeholder="输入你的呢称" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm">
+                </div>
+                <div class="space-y-1">
+                    <label class="text-xs font-bold text-gray-500 ml-1">绑定账号</label>
+                    <input type="text" id="user-account-input" placeholder="手机号或邮箱" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm">
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加好友面板 -->
+    <div id="panel-add-friend" class="full-panel">
+        <header class="p-4 border-b flex justify-between items-center">
+            <button onclick="document.getElementById('panel-add-friend').style.display='none'">取消</button>
+            <h1 class="font-bold">添加好友</h1>
+            <button onclick="submitAddFriend()" class="text-pink-500 font-bold">添加</button>
+        </header>
+        <div class="p-6 space-y-4">
+            <div class="space-y-4">
+                <div class="space-y-1">
+                    <input type="text" id="new-friend-name" placeholder="好友昵称" class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm">
+                    <textarea id="new-friend-bio" rows="3" placeholder="好友个性签名..." class="w-full p-3 bg-gray-50 border border-gray-100 rounded-xl outline-none text-sm resize-none"></textarea>
+                </div>
+                <p class="text-xs text-gray-400 p-2 bg-pink-50 rounded-lg">注：添加的好友默认为人类用户，AI 将不会在与其对话中进行自动回复。</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- 聊天窗口面板 -->
+    <div id="panel-chat" class="full-panel bg-pink-50/30">
+        <header class="p-4 border-b bg-white flex items-center gap-3">
+            <button onclick="closeChat()" class="p-1"><i data-lucide="chevron-left"></i></button>
+            <div class="flex-1 flex items-center gap-3">
+                <img id="current-char-avatar" src="" class="w-10 h-10 rounded-full border-2 border-pink-200 object-cover" alt="avatar">
+                <h1 id="current-char-name" class="font-bold text-gray-800"></h1>
+            </div>
+            <button onclick="document.getElementById('panel-edit-char').style.display='flex'"><i data-lucide="more-horizontal"></i></button>
+        </header>
+        
+        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 no-scrollbar">
+            <!-- 消息列表 -->
+        </div>
+
+        <div class="p-4 bg-white border-t flex items-end gap-2">
+            <div class="flex-1 bg-gray-100 rounded-2xl flex items-end p-1">
+                <textarea id="chat-input" rows="1" placeholder="发送消息..." 
+                          class="flex-1 bg-transparent p-3 outline-none text-sm max-h-32 resize-none"
+                          oninput="autoResize(this)"></textarea>
+            </div>
+            <button onclick="sendMessage()" class="p-3 bg-pink-400 text-white rounded-full hover:bg-pink-500">
+                <i data-lucide="send" size="20"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- 角色/人设编辑面板 -->
+    <div id="panel-edit-char" class="full-panel">
+        <header class="p-4 border-b flex justify-between items-center">
+            <button onclick="document.getElementById('panel-edit-char').style.display='none'">取消</button>
+            <h1 class="font-bold">人设详情</h1>
+            <button onclick="saveCharSettings()" class="text-pink-500 font-bold">完成</button>
+        </header>
+        <div class="flex-1 overflow-y-auto no-scrollbar">
+            <div class="p-6 space-y-8">
+                <!-- 基础信息 -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">基础档案</h3>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 flex flex-col items-center gap-4">
+                        <div class="relative">
+                            <img id="edit-avatar-preview" src="" class="w-20 h-20 rounded-full object-cover border-2 border-pink-200">
+                            <button class="absolute -bottom-1 -right-1 bg-pink-500 text-white p-2 rounded-full" onclick="document.getElementById('char-avatar-upload').click()">
+                                <i data-lucide="camera" size="14"></i>
+                            </button>
+                            <input type="file" id="char-avatar-upload" class="hidden" accept="image/*" onchange="previewCharAvatar(event)">
+                        </div>
+                        <div class="w-full space-y-3">
+                            <input type="text" id="edit-name" placeholder="角色姓名" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none">
+                            <textarea id="edit-bio" rows="3" placeholder="角色的核心背景故事..." class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none resize-none"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 灵魂设定 (AI 核心) -->
+                <div id="ai-soul-settings" class="space-y-4">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">灵魂设定 (AI 核心)</h3>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400 ml-1">深度记忆 (他/她记得的事)</label>
+                            <textarea id="edit-memory" rows="3" placeholder="角色记得的最重要的事..." class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none resize-none"></textarea>
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400 ml-1">性格标签</label>
+                            <input type="text" id="edit-personality" placeholder="例如：傲娇, 温柔, 占有欲强" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400 ml-1">说话风格</label>
+                            <input type="text" id="edit-style" placeholder="例如：文雅, 霸道, 喜欢用叠词" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none">
+                        </div>
+                        <div class="space-y-1">
+                            <label class="text-xs text-gray-400 ml-1">常用口头禅</label>
+                            <input type="text" id="edit-phrases" placeholder="常用口头禅，逗号分隔" class="w-full p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 聊天背景 -->
+                <div class="space-y-4">
+                    <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider ml-1">聊天背景 (专属氛围)</h3>
+                    <div class="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm font-medium">启用专属背景</span>
+                            <input type="checkbox" id="bg-enabled" onchange="toggleBg(this.checked)" class="w-5 h-5 accent-pink-500">
+                        </div>
+                        <div class="space-y-2">
+                            <input type="text" id="bg-url-input" placeholder="输入背景图 URL 或点击右侧上传..." 
+                                   class="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl text-xs outline-none">
+                            <button onclick="document.getElementById('char-bg-upload').click()" 
+                                    class="w-full py-2 border-2 border-dashed border-gray-200 rounded-xl text-xs text-gray-400 flex items-center justify-center gap-2">
+                                <i data-lucide="image" size="14"></i>
+                                <span>上传背景图片</span>
+                            </button>
+                            <input type="file" id="char-bg-upload" class="hidden" accept="image/*" onchange="previewCharBg(event)">
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-[10px] text-gray-400">
+                                <span>模糊度</span>
+                                <span id="blur-val">0px</span>
+                            </div>
+                            <input type="range" id="bg-blur-range" min="0" max="20" value="0" class="w-full accent-pink-400" oninput="updateBgFilter()">
+                        </div>
+                        <div class="space-y-1">
+                            <div class="flex justify-between text-[10px] text-gray-400">
+                                <span>透明度</span>
+                                <span id="opacity-val">100%</span>
+                            </div>
+                            <input type="range" id="bg-opacity-range" min="0" max="100" value="100" class="w-full accent-pink-400" oninput="updateBgFilter()">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 危险操作 -->
+                <div class="pt-4 pb-8 space-y-3">
+                    <button onclick="togglePinCharacter()" id="pin-btn" class="w-full py-4 bg-white text-gray-700 font-bold rounded-2xl border border-gray-100 shadow-sm flex items-center justify-center gap-2">
+                        <i data-lucide="pin" size="18"></i>
+                        <span>置顶该角色</span>
+                    </button>
+                    <button onclick="toggleBlacklist()" id="blacklist-btn" class="w-full py-4 bg-white text-orange-500 font-bold rounded-2xl border border-gray-100 shadow-sm">
+                        加入黑名单
+                    </button>
+                    <button onclick="deleteCharacter()" class="w-full py-4 bg-white text-red-500 font-bold rounded-2xl border border-gray-100 shadow-sm">
+                        删除人设
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 底部导航 -->
+    <nav class="bottom-nav">
+        <button onclick="switchTab('home')" id="nav-home" class="bottom-nav-item active">
+            <i data-lucide="layout-grid" size="24"></i>
+            <span>首页</span>
+        </button>
+        <button onclick="switchTab('contacts')" id="nav-contacts" class="bottom-nav-item">
+            <i data-lucide="users" size="24"></i>
+            <span>通讯录</span>
+        </button>
+        <button onclick="switchTab('moments')" id="nav-moments" class="bottom-nav-item">
+            <i data-lucide="aperture" size="24"></i>
+            <span>朋友圈</span>
+        </button>
+        <button onclick="switchTab('settings')" id="nav-settings" class="bottom-nav-item">
+            <i data-lucide="settings" size="24"></i>
+            <span>设置</span>
+        </button>
+    </nav>
+
+    <script>
+        function initIcons() { lucide.createIcons(); }
+
+        const state = {
+            activeTab: 'home',
+            user: {
+                nickname: '我',
+                avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=User',
+                account: '',
+                momentsBg: '' // 移除不稳定的外部图片
+            },
+            characters: [
+                { 
+                    id: 1, 
+                    type: 'ai',
+                    name: '沈星辞', 
+                    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix', 
+                    bio: '现任 A 大学副教授。性格外冷内热，对你有着偏执的温柔...', 
+                    memory: '初次见面是在一个雨天的图书馆，我为你递了一把伞。',
+                    personality: '温柔, 腹黑, 教授',
+                    style: '文雅, 偶尔霸道',
+                    phrases: '小朋友, 听话, 乖',
+                    messages: [{ role: 'ai', content: '早安，我的小朋友。昨晚睡得好吗？' }],
+                    bgSettings: { enabled: false, url: '', blur: 0, opacity: 100 },
+                    isPinned: false,
+                    isBlacklisted: false
+                }
+            ],
+            currentCharacterId: 1,
+            moments: [
+                {
+                    id: 101,
+                    authorId: 1,
+                    content: '欢迎来到你的梦幻空间。在这里，你可以定义属于你的灵魂伴侣。',
+                    image: '', 
+                    time: '刚刚',
+                    likes: 0,
+                    hasLiked: false,
+                    comments: []
+                }
+            ]
+        };
+
+        window.onload = () => {
+            loadAllData();
+            updateUserProfileUI();
+            renderHomeHall();
+            renderContacts();
+            renderMoments();
+            initIcons();
+        };
+
+        function saveAllData() { 
+            try {
+                const data = JSON.stringify({ 
+                    user: state.user,
+                    characters: state.characters, 
+                    currentCharacterId: state.currentCharacterId,
+                    moments: state.moments
+                });
+                localStorage.setItem('dream_app_state_v9', data); 
+            } catch (e) {
+                console.error('Storage failed:', e);
+                if (e.name === 'QuotaExceededError') {
+                    alert('存储空间已满！可能是因为背景图或头像图片太大。建议清理角色或更换更小的图片。');
+                } else {
+                    alert('保存数据时出错，请重试');
+                }
+            }
+        }
+        function loadAllData() {
+            const saved = localStorage.getItem('dream_app_state_v9');
+            if (saved) {
+                const data = JSON.parse(saved);
+                state.user = data.user || state.user;
+                state.characters = data.characters;
+                state.currentCharacterId = data.currentCharacterId;
+                state.moments = data.moments || state.moments;
+            }
+        }
+
+        function updateUserProfileUI() {
+            // 更新朋友圈头部
+            const bgImg = document.getElementById('moments-bg-img');
+            if (state.user.momentsBg) {
+                bgImg.src = state.user.momentsBg;
+            }
+            document.getElementById('moments-user-name').innerText = state.user.nickname;
+            document.getElementById('moments-user-avatar').src = state.user.avatar;
+            
+            // 更新设置页面
+            document.getElementById('settings-user-name').innerText = state.user.nickname;
+            document.getElementById('settings-user-avatar').src = state.user.avatar;
+            
+            // 更新资料编辑页面
+            document.getElementById('user-nickname-input').value = state.user.nickname;
+            document.getElementById('user-avatar-preview').src = state.user.avatar;
+            document.getElementById('user-account-input').value = state.user.account || '';
+        }
+
+        function switchTab(tab) {
+            state.activeTab = tab;
+            ['home', 'contacts', 'moments', 'settings'].forEach(t => {
+                document.getElementById(`tab-${t}`).classList.add('hidden');
+                document.getElementById(`nav-${t}`).classList.remove('active');
+            });
+            document.getElementById(`tab-${tab}`).classList.remove('hidden');
+            document.getElementById(`nav-${tab}`).classList.add('active');
+            
+            if (tab === 'home') renderHomeHall();
+            if (tab === 'contacts') renderContacts();
+            if (tab === 'moments') renderMoments();
+            initIcons();
+        }
+
+        function renderHomeHall() {
+            const container = document.getElementById('home-hall');
+            container.innerHTML = '';
+            
+            // 排序：置顶在前
+            const sorted = [...state.characters].sort((a, b) => (b.isPinned ? 1 : 0) - (a.isPinned ? 1 : 0));
+            
+            sorted.forEach(char => {
+                const div = document.createElement('div');
+                div.className = 'bg-white p-4 rounded-2xl shadow-sm border border-gray-50 flex flex-col items-center gap-3 relative animate-fade-in';
+                div.onclick = () => enterChat(char.id);
+                
+                div.innerHTML = `
+                    ${char.isPinned ? '<div class="absolute top-2 right-2 text-pink-400"><i data-lucide="pin" size="14"></i></div>' : ''}
+                    <img src="${char.avatar}" class="w-16 h-16 rounded-2xl object-cover shadow-sm">
+                    <div class="text-center">
+                        <h3 class="font-bold text-gray-800">${char.name}</h3>
+                        <p class="text-[10px] text-gray-400 line-clamp-1 px-2">${char.bio || '还没有介绍呢...'}</p>
+                    </div>
+                `;
+                container.appendChild(div);
+            });
+
+            // 添加按钮
+            const addBtn = document.createElement('div');
+            addBtn.className = 'bg-pink-50/50 p-4 rounded-2xl border-2 border-dashed border-pink-100 flex flex-col items-center justify-center gap-2 cursor-pointer';
+            addBtn.onclick = addNewCharacter;
+            addBtn.innerHTML = `
+                <i data-lucide="plus-circle" class="text-pink-300"></i>
+                <span class="text-xs text-pink-400 font-medium">创建人设</span>
+            `;
+            container.appendChild(addBtn);
+            initIcons();
+        }
+
+        function renderContacts() {
+            const container = document.getElementById('contact-list');
+            container.innerHTML = '';
+            
+            // 按类型分组显示
+            const ais = state.characters.filter(c => c.type !== 'user');
+            const humans = state.characters.filter(c => c.type === 'user');
+            
+            const createSection = (title, list) => {
+                if (list.length === 0) return;
+                const header = document.createElement('div');
+                header.className = 'bg-gray-50 px-4 py-2 text-[10px] font-bold text-gray-400 uppercase tracking-widest';
+                header.innerText = title;
+                container.appendChild(header);
+                
+                list.forEach(char => {
+                    const item = document.createElement('div');
+                    item.className = 'character-list-item';
+                    item.onclick = () => enterChat(char.id);
+                    item.innerHTML = `
+                        <img src="${char.avatar}" class="w-10 h-10 rounded-lg object-cover mr-4 pointer-events-none">
+                        <div class="flex-1 pointer-events-none">
+                            <h4 class="font-bold text-gray-800 text-sm">${char.name}</h4>
+                            <p class="text-xs text-gray-400 line-clamp-1">${char.bio || '无签名'}</p>
+                        </div>
+                    `;
+                    container.appendChild(item);
+                });
+            };
+
+            createSection('AI 伴侣', ais);
+            createSection('人类好友', humans);
+            initIcons();
+        }
+
+        function renderMoments() {
+            const container = document.getElementById('moments-list');
+            container.innerHTML = '';
+            
+            state.moments.slice().reverse().forEach(m => {
+                const author = state.characters.find(c => c.id === m.authorId) || { name: state.user.nickname, avatar: state.user.avatar };
+                const card = document.createElement('div');
+                card.className = 'moment-card animate-fade-in';
+                
+                const imageHtml = m.image ? `
+                    <div class="rounded-xl overflow-hidden mb-3 max-h-60 flex items-center justify-center bg-gray-50 border border-gray-100">
+                        <img src="${m.image}" class="w-full h-full object-cover" onerror="this.src='https://placehold.co/400x300?text=图片加载失败'">
+                    </div>` : '';
+
+                card.innerHTML = `
+                    <div class="flex gap-3">
+                        <img src="${author.avatar}" class="w-10 h-10 rounded-full object-cover">
+                        <div class="flex-1">
+                            <div class="flex justify-between items-start">
+                                <h4 class="font-bold text-gray-800">${author.name}</h4>
+                                <span class="text-[10px] text-gray-300">${m.time}</span>
+                            </div>
+                            <p class="text-sm text-gray-600 mt-1 leading-relaxed">${m.content}</p>
+                            ${imageHtml}
+                            <div class="flex gap-4 mt-3">
+                                <button onclick="likeMoment(${m.id})" class="flex items-center gap-1 ${m.hasLiked ? 'text-pink-500' : 'text-gray-400'}">
+                                    <i data-lucide="heart" size="16" ${m.hasLiked ? 'fill="currentColor"' : ''}></i>
+                                    <span class="text-xs">${m.likes || ''}</span>
+                                </button>
+                                <button class="flex items-center gap-1 text-gray-400">
+                                    <i data-lucide="message-square" size="16"></i>
+                                    <span class="text-xs">${m.comments.length || ''}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                container.appendChild(card);
+            });
+            initIcons();
+        }
+
+        // --- 功能函数 ---
+        
+        function previewUserAvatar(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                document.getElementById('user-avatar-preview').src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function saveUserProfile() {
+            state.user.nickname = document.getElementById('user-nickname-input').value || '我';
+            state.user.avatar = document.getElementById('user-avatar-preview').src;
+            state.user.account = document.getElementById('user-account-input').value;
+            updateUserProfileUI();
+            saveAllData();
+            document.getElementById('panel-user-profile').style.display = 'none';
+            alert('资料已保存');
+        }
+
+        function uploadMomentsBg(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                state.user.momentsBg = event.target.result;
+                document.getElementById('moments-bg-img').src = event.target.result;
+                saveAllData();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function previewMomentImg(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                const img = document.getElementById('post-moment-img-preview');
+                img.src = event.target.result;
+                img.classList.remove('hidden');
+                document.getElementById('post-moment-img-btn').querySelector('i').classList.add('hidden');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function submitMoment() {
+            const text = document.getElementById('post-moment-text').value.trim();
+            const img = document.getElementById('post-moment-img-preview').src;
+            if(!text && !img) return;
+
+            state.moments.push({
+                id: Date.now(),
+                authorId: 'user', // 用户发布的
+                content: text,
+                image: img.startsWith('data:') ? img : '',
+                time: '刚刚',
+                likes: 0,
+                hasLiked: false,
+                comments: []
+            });
+            
+            saveAllData();
+            renderMoments();
+            document.getElementById('panel-post-moment').style.display = 'none';
+            // 清空
+            document.getElementById('post-moment-text').value = '';
+            document.getElementById('post-moment-img-preview').src = '';
+            document.getElementById('post-moment-img-preview').classList.add('hidden');
+            document.getElementById('post-moment-img-btn').querySelector('i').classList.remove('hidden');
+        }
+
+        function likeMoment(id) {
+            const m = state.moments.find(x => x.id === id);
+            if(m) {
+                m.hasLiked = !m.hasLiked;
+                m.likes += m.hasLiked ? 1 : -1;
+                renderMoments();
+                saveAllData();
+            }
+        }
+
+        function submitAddFriend() {
+            const name = document.getElementById('new-friend-name').value.trim();
+            const bio = document.getElementById('new-friend-bio').value.trim();
+            if(!name) return;
+
+            state.characters.push({
+                id: Date.now(),
+                type: 'user',
+                name: name,
+                avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`,
+                bio: bio,
+                messages: [],
+                isPinned: false,
+                isBlacklisted: false
+            });
+            
+            saveAllData();
+            renderContacts();
+            document.getElementById('panel-add-friend').style.display = 'none';
+            alert('添加成功！');
+            
+            // 清空输入
+            document.getElementById('new-friend-name').value = '';
+            document.getElementById('new-friend-bio').value = '';
+        }
+
+        function enterChat(id) {
+            state.currentCharacterId = id;
+            const current = state.characters.find(c => c.id === id);
+            if(!current) return;
+            
+            // 隐藏底部导航
+            document.querySelector('.bottom-nav').style.display = 'none';
+
+            // 修复：确保切换角色时清空旧产生的输入内容和调整高度
+            const input = document.getElementById('chat-input');
+            input.value = '';
+            input.style.height = 'auto';
+            
+            document.getElementById('current-char-name').innerText = current.name;
+            document.getElementById('current-char-avatar').src = current.avatar;
+            
+            const container = document.getElementById('chat-messages');
+            container.innerHTML = '';
+            
+            // 修复：确保消息列表存在，如果不存在则初始化
+            if (!current.messages) current.messages = [];
+
+            current.messages.forEach(msg => appendMessageToUI(msg.role, msg.content, false, msg.isFailed));
+            
+            document.getElementById('panel-chat').style.display = 'flex';
+            applyBgSettings();
+            saveAllData();
+            
+            // 自动滚动到底部
+            setTimeout(() => {
+                container.scrollTop = container.scrollHeight;
+            }, 100);
+        }
+
+        function closeChat() { 
+            document.getElementById('panel-chat').style.display = 'none'; 
+            // 彻底清除背景显示状态，恢复主页面背景
+            const layer = document.getElementById('custom-bg-layer');
+            layer.style.display = 'none';
+            layer.style.backgroundImage = '';
+            document.body.classList.remove('has-custom-bg');
+            // 显示底部导航
+            document.querySelector('.bottom-nav').style.display = 'flex';
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('chat-input');
+            const text = input.value.trim();
+            if(!text) return;
+
+            const current = state.characters.find(c => c.id === state.currentCharacterId);
+            const isBlacklisted = current.isBlacklisted;
+
+            // 添加用户消息
+            appendMessageToUI('user', text, true, isBlacklisted);
+            input.value = ''; 
+            autoResize(input);
+
+            // 如果被拉黑，或者对方是“用户好友”，AI 不会回复
+            if (isBlacklisted || current.type === 'user') {
+                console.log('No AI response: blacklisted or user-to-user chat.');
+                return;
+            }
+
+            const aiReply = await getAIResponse(text);
+            appendMessageToUI('ai', aiReply, true);
+        }
+
+        function appendMessageToUI(role, content, save, isFailed = false) {
+            const container = document.getElementById('chat-messages');
+            const div = document.createElement('div');
+            div.className = `flex ${role === 'user' ? 'justify-end' : 'items-start'} gap-3 animate-fade-in mb-4`;
+            
+            const current = state.characters.find(c => c.id === state.currentCharacterId);
+            
+            if (role === 'user') {
+                div.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        ${isFailed ? '<i data-lucide="alert-circle" class="text-red-500 w-5 h-5"></i>' : ''}
+                        <div class="chat-bubble-user p-4 max-w-[85%] shadow-sm">${content}</div>
+                        <img src="${state.user.avatar}" class="w-8 h-8 rounded-full object-cover shadow-sm border border-pink-100">
+                    </div>
+                `;
+            } else {
+                div.innerHTML = `
+                    <img src="${current.avatar}" class="w-10 h-10 rounded-full object-cover shadow-sm border border-pink-100">
+                    <div class="chat-bubble-ai p-4 max-w-[85%] text-gray-700 shadow-sm border border-gray-100 bg-white/80 backdrop-blur-sm">${content}</div>
+                `;
+            }
+
+            container.appendChild(div); 
+            container.scrollTop = container.scrollHeight;
+            
+            if (save) { 
+                current.messages.push({ role, content, isFailed }); 
+                saveAllData(); 
+            }
+            initIcons();
+        }
+
+        async function getAIResponse(text) {
+            console.log('Sending message to API:', text);
+            try {
+                const res = await fetch("/api/chat", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ message: text })
+                });
+                const data = await res.json();
+                return data.reply;
+            } catch (e) {
+                console.error('API Error:', e);
+                return "连接服务器失败，请确保后端服务已启动。";
+            }
+        }
+        
+        function addNewCharacter() {
+            const id = Date.now();
+            // 使用更可靠的默认头像占位图
+            const defaultAvatar = `https://api.dicebear.com/7.x/avataaars/svg?seed=${id}&backgroundColor=ffdfbf`;
+            
+            state.characters.push({ 
+                id, 
+                type: 'ai',
+                name: '新伴侣', 
+                avatar: defaultAvatar, 
+                bio: '', 
+                memory: '',
+                personality: '',
+                style: '',
+                phrases: '',
+                messages: [{ role: 'ai', content: '你好，很高兴遇见你。' }], 
+                bgSettings: { enabled: false, url: '', blur: 0, opacity: 100 },
+                isPinned: false,
+                isBlacklisted: false
+            });
+            renderHomeHall(); 
+            renderContacts(); 
+            saveAllData();
+            alert('新的人设已创建');
+        }
+
+        function autoResize(t) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
+        
+        function applyBgSettings() {
+            const layer = document.getElementById('custom-bg-layer');
+            const current = state.characters.find(c => c.id === state.currentCharacterId);
+            
+            // 彻底强制重置 DOM 状态
+            document.body.classList.remove('has-custom-bg');
+            layer.style.display = 'none';
+            layer.style.backgroundImage = 'none';
+
+            if (current && current.bgSettings && current.bgSettings.enabled && current.bgSettings.url) {
+                const blurVal = current.bgSettings.blur || 0;
+                const opacityVal = (current.bgSettings.opacity || 100) / 100;
+                
+                // 关键修复：确保 URL 格式正确且使用双引号包裹，防止特殊字符导致失败
+                layer.style.backgroundImage = `url("${current.bgSettings.url}")`;
+                layer.style.filter = `blur(${blurVal}px)`;
+                layer.style.opacity = opacityVal;
+                layer.style.display = 'block';
+                
+                // 强制触发重绘
+                void layer.offsetHeight; 
+                
+                document.body.classList.add('has-custom-bg');
+                console.log('Background applied successfully');
+            }
+        }
+        
+        function toggleBg(e) { 
+            const c = state.characters.find(ch => ch.id === state.currentCharacterId);
+            if(c) {
+                c.bgSettings.enabled = e; 
+                applyBgSettings(); 
+                saveAllData(); 
+            }
+        }
+        
+        function updateBgFilter() {
+            const c = state.characters.find(ch => ch.id === state.currentCharacterId);
+            if(c) {
+                c.bgSettings.blur = document.getElementById('bg-blur-range').value;
+                c.bgSettings.opacity = document.getElementById('bg-opacity-range').value;
+                applyBgSettings(); 
+                saveAllData(); 
+            }
+        }
+
+        function applyBgUrl() {
+            const c = state.characters.find(ch => ch.id === state.currentCharacterId);
+            if(c) {
+                c.bgSettings.url = document.getElementById('bg-url-input').value;
+                applyBgSettings();
+                saveAllData();
+            }
+        }
+
+        // --- 角色编辑功能 ---
+        function saveCharSettings() {
+            const current = state.characters.find(c => c.id === state.currentCharacterId);
+            if(!current) return;
+            
+            current.name = document.getElementById('edit-name').value;
+            current.bio = document.getElementById('edit-bio').value;
+            current.avatar = document.getElementById('edit-avatar-preview').src;
+            
+            if (current.type !== 'user') {
+                current.memory = document.getElementById('edit-memory').value;
+                current.personality = document.getElementById('edit-personality').value;
+                current.style = document.getElementById('edit-style').value;
+                current.phrases = document.getElementById('edit-phrases').value;
+                current.bgSettings.url = document.getElementById('bg-url-input').value;
+            }
+            
+            saveAllData();
+            document.getElementById('panel-edit-char').style.display = 'none';
+            // 同步更新聊天窗口
+            document.getElementById('current-char-name').innerText = current.name;
+            document.getElementById('current-char-avatar').src = current.avatar;
+            applyBgSettings();
+            alert('设置已保存');
+        }
+
+        function previewCharAvatar(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                document.getElementById('edit-avatar-preview').src = event.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function previewCharBg(e) {
+            const file = e.target.files[0];
+            if(!file) return;
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                document.getElementById('bg-url-input').value = event.target.result;
+                applyBgSettings();
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function togglePinCharacter() {
+            const current = state.characters.find(c => c.id === state.currentCharacterId);
+            current.isPinned = !current.isPinned;
+            saveAllData();
+            document.getElementById('pin-btn').querySelector('span').innerText = current.isPinned ? '取消置顶' : '置顶该角色';
+            alert(current.isPinned ? '已置顶' : '已取消置顶');
+        }
+
+        function toggleBlacklist() {
+            const current = state.characters.find(c => c.id === state.currentCharacterId);
+            current.isBlacklisted = !current.isBlacklisted;
+            saveAllData();
+            document.getElementById('blacklist-btn').innerText = current.isBlacklisted ? '从黑名单移除' : '加入黑名单';
+            alert(current.isBlacklisted ? '已拉黑' : '已移出黑名单');
+        }
+
+        function deleteCharacter() {
+            if (confirm('确定要删除这个人设吗？此操作不可撤销。')) {
+                state.characters = state.characters.filter(c => c.id !== state.currentCharacterId);
+                saveAllData();
+                closeChat();
+                document.getElementById('panel-edit-char').style.display = 'none';
+                switchTab('home');
+            }
+        }
+
+    </script>
+</body>
+</html>
